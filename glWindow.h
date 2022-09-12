@@ -4,9 +4,16 @@
 #include <string.h>
 #include <math.h>
 
+#define modn(x, N) (((x < 0) ? ((x % N) + N) : x) % N)
+#define mod0(x, N) (x & (N - 1))
+#define mod1(x, N) ((x << N) >> N)
+#define modn0(x, N) mod1(((x < 0) ? (mod1(x, N) + N) : x), N)
+#define modn1(x, N) mod0(((x < 0) ? (mod0(x, N) + N) : x), N)
+
 #define GL_COLOR_32(R,G,B,A) (((unsigned int)(A)<<24) | ((unsigned int)(B)<<16) | ((unsigned int)(G)<<8) | ((unsigned int)(R)<<0))
 #define GL_COLOR_24(R,G,B) (((unsigned int)(255)<<24) | ((unsigned int)(B)<<16) | ((unsigned int)(G)<<8) | ((unsigned int)(R)<<0))
 #define GL_BYTE_FLOAT 0.003921568627451
+#define GL_CLEAR_DEPTH 2147483647i32
 
 #define gltrue 1
 #define glfalse 0
@@ -1127,28 +1134,23 @@ glMat4 glRotateZMat4(glMat4 m, float Angle)
 glMat4 glLookAtMat4(glVec3 Pos, glVec3 LookAt, glVec3 Up)
 {
 	glMat4 Matrix;
-	glLoadMat4IdentityP(&Matrix);
+	glVec3 NewForward = glSub3P(&LookAt, &Pos);
+	glNormalize3P(&NewForward);
 
-	glVec3 F = glNormalize3(glSub3P(&LookAt, &Pos));
-	glVec3 S = glNormalize3(glCross3P(&F, &Up));
-	glVec3 U = glCross3P(&S, &F);
+	// Calculate New Up direction
+	glVec3 a = glMul3(NewForward, GLVec3f(glDot3P(&Up, &NewForward)));
+	glVec3 NewUp = glSub3P(&Up, &a);
+	glNormalize3P(&NewUp);
 
-//	Z.x *= -1;
-//	Z.y *= -1;
-//	Z.z *= -1;
+	// New Right direction is easy, its just cross product
+	glVec3 NewRight = glCross3P(&NewUp, &NewForward);
 
-	Matrix.m[0][0] = S.x;
-	Matrix.m[1][0] = S.y;
-	Matrix.m[2][0] = S.z;
-	Matrix.m[0][1] = U.x;
-	Matrix.m[1][1] = U.y;
-	Matrix.m[2][1] = U.z;
-	Matrix.m[0][2] = -F.x;
-	Matrix.m[1][2] = -F.y;
-	Matrix.m[2][2] = -F.z;
-	Matrix.m[3][0] = -glDot3P(&S, &Pos);
-	Matrix.m[3][1] = -glDot3P(&U, &Pos);
-	Matrix.m[3][2] =  glDot3P(&F, &Pos);
+	// Construct Dimensioning and Translation Matrix	
+	Matrix.m[0][0] = NewRight.x;	Matrix.m[0][1] = NewRight.y;	Matrix.m[0][2] = NewRight.z;	Matrix.m[0][3] = 0.0;
+	Matrix.m[1][0] = NewUp.x;		Matrix.m[1][1] = NewUp.y;		Matrix.m[1][2] = NewUp.z;		Matrix.m[1][3] = 0.0;
+	Matrix.m[2][0] = NewForward.x;	Matrix.m[2][1] = NewForward.y;	Matrix.m[2][2] = NewForward.z;	Matrix.m[2][3] = 0.0;
+	Matrix.m[3][0] = 1;				Matrix.m[3][1] = 1;				Matrix.m[3][2] = 1;				Matrix.m[3][3] = 1.0f;
+	return Matrix;
 
 	return Matrix;
 }
@@ -1157,33 +1159,52 @@ glMat4 glLookAtMat4(glVec3 Pos, glVec3 LookAt, glVec3 Up)
 glMat4 glLookAtMat4P(glVec3* Pos, glVec3* LookAt, glVec3* Up)
 {
 	glMat4 Matrix;
+	glVec3 NewForward = glSub3P(LookAt, Pos);
+	glNormalize3P(&NewForward);
 
-	glVec3 Z = glNormalize3(glSub3P(LookAt, Pos));
-	glVec3 X = glNormalize3(glCross3P(&Z, Up));
-	glVec3 Y = glCross3P(&X, &Z);
+	// Calculate New Up direction
+	glVec3 a = glMul3(NewForward, GLVec3f(glDot3P(Up, &NewForward)));
+	glVec3 NewUp = glSub3P(Up, &a);
+	glNormalize3P(&NewUp);
 
-	Z.x *= -1;
-	Z.y *= -1;
-	Z.z *= -1;
+	// New Right direction is easy, its just cross product
+	glVec3 NewRight = glCross3P(&NewUp, &NewForward);
 
-	Matrix.m[0][0] = X.x;
-	Matrix.m[0][1] = X.y;
-	Matrix.m[0][2] = X.z;
-	Matrix.m[0][3] = -glDot3P(&X, Pos);
-	Matrix.m[1][0] = Y.x;
-	Matrix.m[1][1] = Y.y;
-	Matrix.m[1][2] = Y.z;
-	Matrix.m[1][3] = -glDot3P(&Y, Pos);
-	Matrix.m[2][0] = Z.x;
-	Matrix.m[2][1] = Z.y;
-	Matrix.m[2][2] = Z.z;
-	Matrix.m[2][3] = -glDot3P(&Z, Pos);
-	Matrix.m[3][0] = 0;
-	Matrix.m[3][1] = 0;
-	Matrix.m[3][2] = 0;
-	Matrix.m[3][3] = 1.0;
+	// Construct Dimensioning and Translation Matrix	
+	Matrix.m[0][0] = NewRight.x;	Matrix.m[0][1] = NewRight.y;	Matrix.m[0][2] = NewRight.z;	Matrix.m[0][3] = 0.0f;
+	Matrix.m[1][0] = NewUp.x;		Matrix.m[1][1] = NewUp.y;		Matrix.m[1][2] = NewUp.z;		Matrix.m[1][3] = 0.0f;
+	Matrix.m[2][0] = NewForward.x;	Matrix.m[2][1] = NewForward.y;	Matrix.m[2][2] = NewForward.z;	Matrix.m[2][3] = 0.0f;
+	Matrix.m[3][0] = 0;			Matrix.m[3][1] = 0;			Matrix.m[3][2] = 0;			Matrix.m[3][3] = 1.0f;
+	return Matrix;
 
 	return Matrix;
+}
+
+glMat4 Matrix_QuickInverse(glMat4 m) // Only for Rotation/Translation Matrices
+{
+	glMat4 matrix;
+	glLoadMat4IdentityP(&matrix);
+	matrix.m[0][0] = m.m[0][0]; 
+	matrix.m[1][0] = m.m[0][1]; 
+	matrix.m[2][0] = m.m[0][2]; 
+
+	matrix.m[0][1] = m.m[1][0]; 
+	matrix.m[1][1] = m.m[1][1]; 
+	matrix.m[2][1] = m.m[1][2]; 
+
+	matrix.m[0][2] = m.m[2][0]; 
+	matrix.m[1][2] = m.m[2][1]; 
+	matrix.m[2][2] = m.m[2][2]; 
+
+	matrix.m[0][3] = 0.0f;
+	matrix.m[1][3] = 0.0f;
+	matrix.m[2][3] = 0.0f;
+
+	matrix.m[0][3] = -(m.m[3][0] * matrix.m[0][0] + m.m[3][1] * matrix.m[1][0] + m.m[3][2] * matrix.m[2][0]);
+	matrix.m[1][3] = -(m.m[3][0] * matrix.m[0][1] + m.m[3][1] * matrix.m[1][1] + m.m[3][2] * matrix.m[2][1]);
+	matrix.m[2][3] = -(m.m[3][0] * matrix.m[0][2] + m.m[3][1] * matrix.m[1][2] + m.m[3][2] * matrix.m[2][2]);
+	matrix.m[3][3] = 1.0f;
+	return matrix;
 }
 
 glVec4 glPerspectiveDivide(glVec4 v)
@@ -1458,7 +1479,7 @@ typedef struct
 	int Width;
 	int Height;
 	int Size;
-	int ImageType;
+	int Type;
 	unsigned char* Data;
 } glImage;
 
@@ -1472,7 +1493,7 @@ typedef enum
 
 typedef enum
 {
-	GL_WINDOW_DYNAMIC_ASPECT = 0x0,
+	GL_WINDOW_ASPECT_DYNAMIC = 0x0,
 	GL_WINDOW_ASPECT_16_9 = 0x1,
 	GL_WINDOW_ASPECT_4_3 = 0x2,
 } glWindowFlags;
@@ -1487,7 +1508,7 @@ void glCreateWindow(const char* Title, int x, int y, int Width, int Height, int 
 
 	switch (WindowFlags)
 	{
-	case GL_WINDOW_DYNAMIC_ASPECT:
+	case GL_WINDOW_ASPECT_DYNAMIC:
 		Window->Aspect = (float)Width / (float)Height;
 		break;
 
@@ -1535,7 +1556,7 @@ int glPollEvent(glWindow* Window)
 		{
 			SDL_GetWindowSize(Window->Window, &Window->Width, &Window->Height);
 
-			if (Window->Flags != GL_WINDOW_DYNAMIC_ASPECT)
+			if (Window->Flags != GL_WINDOW_ASPECT_DYNAMIC)
 			{
 				Window->Height = Window->Width / Window->Aspect;
 				SDL_SetWindowSize(Window->Window, Window->Width, Window->Height);
@@ -1564,20 +1585,20 @@ int glPollEvent(glWindow* Window)
 		return 0;
 	}
 
-	return 0;
+	return -1;
 }
 
-extern inline void glSetWindowTitle(glWindow* Window, const char* Title)
+extern inline void glSetWindowTitle(const char* Title, glWindow* Window)
 {
 	SDL_SetWindowTitle(Window->Window, Title);
 }
 
-extern inline void glGetWindowSize(glWindow* Window, int* Width, int* Height)
+extern inline void glGetWindowSize(int* Width, int* Height, glWindow* Window)
 {
 	SDL_GetWindowSize(Window->Window, Width, Height);
 }
 
-extern inline void glSetWindowSize(glWindow* Window, int Width, int Height)
+extern inline void glSetWindowSize(int Width, int Height, glWindow* Window)
 {
 	SDL_SetWindowSize(Window->Window, Width, Height);
 }
@@ -1587,12 +1608,12 @@ extern inline int glGetWindowFocus(glWindow* Window)
 	return (SDL_GetWindowFlags(Window->Window) & SDL_WINDOW_INPUT_FOCUS);
 }
 
-void glCreateImage(int Width, int Height, int ImageType, glImage* Image)
+void glCreateImage(int Width, int Height, int Type, glImage* Image)
 {
 	Image->Width = Width;
 	Image->Height = Height;
-	Image->ImageType = ImageType;
-	Image->Size = Width * Height * Image->ImageType;
+	Image->Type = Type;
+	Image->Size = Width * Height * Image->Type;
 	Image->Data = (unsigned char*)malloc(Image->Size);
 	memset(Image->Data, 255, Image->Size);
 }
@@ -1601,14 +1622,14 @@ void glResizeImage(int Width, int Height, glImage* Image)
 {
 	Image->Width = Width;
 	Image->Height = Height;
-	Image->Size = Width * Height * Image->ImageType;
+	Image->Size = Width * Height * Image->Type;
 	Image->Data = (unsigned char*)realloc(Image->Data, Image->Size);
 	memset(Image->Data, 255, Image->Size);
 }
 
 void glFreeImage(glImage* Image)
 {
-	Image->ImageType = 0;
+	Image->Type = 0;
 	Image->Width = 0;
 	Image->Height = 0;
 	free(Image->Data);
@@ -1620,13 +1641,43 @@ void glClearImage(int Shade, glImage* Image)
 	memset(Image->Data, Shade, Image->Size);
 }
 
-void glRescaleImage(glImage* Image, int NewWidth, int NewHeight)
+void glBGRImageToRGB(glImage* Image)
+{
+	for (int32_t i = 0; i < Image->Width * Image->Height; i++)
+	{
+		int32_t Index = i * Image->Type;
+
+		uint8_t B = Image->Data[Index];
+		uint8_t R = Image->Data[Index + 2];
+
+		Image->Data[Index] = R;
+		Image->Data[Index + 2] = B;
+	}
+}
+
+void glFlipImageVertical(glImage* Image)
+{
+	const size_t Stride = Image->Width * Image->Type;
+	uint8_t* Row = (uint8_t*)malloc(Stride);
+	uint8_t* Low = Image->Data;
+	uint8_t* High = &Image->Data[(Image->Height - 1) * Stride];
+
+	for (; Low < High; Low += Stride, High -= Stride)
+	{
+		memcpy(Row, Low, Stride);
+		memcpy(Low, High, Stride);
+		memcpy(High, Row, Stride);
+	}
+	free(Row);
+}
+
+void glRescaleImage(int NewWidth, int NewHeight, glImage* Image)
 {
 	glImage NewImage;
-	NewImage.ImageType = Image->ImageType;
+	NewImage.Type = Image->Type;
 	NewImage.Width = NewWidth;
 	NewImage.Height = NewHeight;
-	NewImage.Size = NewWidth * NewHeight * Image->ImageType;
+	NewImage.Size = NewWidth * NewHeight * Image->Type;
 	NewImage.Data = (unsigned char*)malloc(NewImage.Size);
 
 	float ImageX = 0;
@@ -1639,13 +1690,13 @@ void glRescaleImage(glImage* Image, int NewWidth, int NewHeight)
 	{
 		for (int y = 0; y < NewHeight; y++)
 		{
-			int Index0 = ((int)ImageX + (int)ImageY * Image->Width) * Image->ImageType;
-			int Index1 = (x + y * NewWidth) * Image->ImageType;
+			int Index0 = ((int)ImageX + (int)ImageY * Image->Width) * Image->Type;
+			int Index1 = (x + y * NewWidth) * Image->Type;
 
 			NewImage.Data[Index1] = Image->Data[Index0];
 			NewImage.Data[Index1 + 1] = Image->Data[Index0 + 1];
 			NewImage.Data[Index1 + 2] = Image->Data[Index0 + 2];
-			if (Image->ImageType == GL_IMAGE_RGBA)
+			if (Image->Type == GL_IMAGE_RGBA)
 				NewImage.Data[Index1 + 3] = Image->Data[Index0 + 3];
 
 			ImageY += ImageH;
@@ -1659,14 +1710,14 @@ void glRescaleImage(glImage* Image, int NewWidth, int NewHeight)
 	*Image = NewImage;
 }
 
-void glImageRGB(glImage* Image, unsigned int AlphaColor)
+void glImageRGB(unsigned int AlphaColor, glImage* Image)
 {
-	if (Image->ImageType == GL_IMAGE_RGB)
+	if (Image->Type == GL_IMAGE_RGB)
 		return;
 
 	glImage NewImage = *Image;
-	NewImage.ImageType = GL_IMAGE_RGB;
-	NewImage.Size = NewImage.Width * NewImage.Height * NewImage.ImageType;
+	NewImage.Type = GL_IMAGE_RGB;
+	NewImage.Size = NewImage.Width * NewImage.Height * NewImage.Type;
 	NewImage.Data = (unsigned char*)malloc(NewImage.Size);
 
 	int j = 0;
@@ -1691,32 +1742,29 @@ void glImageRGB(glImage* Image, unsigned int AlphaColor)
 	*Image = NewImage;
 }
 
-void glImageRGBA(glImage* Image, unsigned int AlphaColor)
+void glImageRGBA(unsigned int AlphaColor, glImage* Image)
 {
-	if (Image->ImageType == GL_IMAGE_RGBA)
+	if (Image->Type == GL_IMAGE_RGBA)
 		return;
 
 	glImage NewImage = *Image;
-	NewImage.ImageType = GL_IMAGE_RGBA;
-	NewImage.Size = NewImage.Width * NewImage.Height * NewImage.ImageType;
+	NewImage.Type = GL_IMAGE_RGBA;
+	NewImage.Size = NewImage.Width * NewImage.Height * NewImage.Type;
 	NewImage.Data = (unsigned char*)malloc(NewImage.Size);
 
 	int j = 0;
 	for (int i = 0; i < Image->Size; i += 3)
 	{
-	//	unsigned int* Color = (unsigned int*)((Image->Data + i));
-	//	if (*Color == AlphaColor)
-		if (Image->Data[i	 ] == ((AlphaColor >> 0) & 0xFF) &&
+		NewImage.Data[j] = Image->Data[i];
+		NewImage.Data[j + 1] = Image->Data[i + 1];
+		NewImage.Data[j + 2] = Image->Data[i + 2];
+		if (Image->Data[i] == ((AlphaColor >> 0) & 0xFF) &&
 			Image->Data[i + 1] == ((AlphaColor >> 8) & 0xFF) &&
-			Image->Data[i + 2] == ((AlphaColor >>16) & 0xFF))
+			Image->Data[i + 2] == ((AlphaColor >> 16) & 0xFF))
 			NewImage.Data[j + 3] = 0;
 		else
 			NewImage.Data[j + 3] = 255;
 
-		NewImage.Data[j] = Image->Data[i];
-		NewImage.Data[j + 1] = Image->Data[i + 1];
-		NewImage.Data[j + 2] = Image->Data[i + 2];
-		
 		j += 4;
 	}
 
@@ -1774,7 +1822,6 @@ void glDrawFramebuffer(glWindow* Window, glImage* Framebuffer)
 
 	SDL_RenderClear(Window->Renderer);
 	SDL_RenderCopy(Window->Renderer, Window->Swapchain, NULL, NULL);
-//	SDL_RenderCopyEx(Window->Renderer, Window->Swapchain, NULL, NULL, 0, NULL, SDL_FLIP_VERTICAL);
 	SDL_RenderPresent(Window->Renderer);
 }
 
@@ -1800,9 +1847,12 @@ void glDrawLayer(glImage* Image, glImage* Framebuffer)
 
 extern inline void glDrawPixel(int x, int y, unsigned int Color, glImage* Framebuffer)
 {
-	int Index = (x + y * Framebuffer->Width) * Framebuffer->ImageType;
-	if (((Color >> 24) & 0xFF) != 0)
-		memcpy(Framebuffer->Data + Index, &Color, Framebuffer->ImageType);
+	int Index = (x + y * Framebuffer->Width) * Framebuffer->Type;
+//	if (Index >= 0 && Index < Framebuffer->Size &&
+//		x >= 0 && x < Framebuffer->Width &&
+//		y >= 0 && y < Framebuffer->Height)
+//	if (((Color >> 24) & 0xFF) != 0)
+		memcpy(Framebuffer->Data + Index, &Color, Framebuffer->Type);
 	/*
 	if (Index >= 0 && Index < Framebuffer->Size &&
 		x >= 0 && x < Framebuffer->Width &&
@@ -1810,7 +1860,7 @@ extern inline void glDrawPixel(int x, int y, unsigned int Color, glImage* Frameb
 	{
 		if (((Color >> 24) & 0xFF) != 0)
 		{
-			memcpy(Framebuffer->Data + Index, &Color, Framebuffer->ImageType);
+			memcpy(Framebuffer->Data + Index, &Color, Framebuffer->Type);
 		//	Framebuffer->Data[Index] = ((Color >> 0) & 0xFF);
 		//	Framebuffer->Data[Index + 1] = ((Color >> 8) & 0xFF);
 		//	Framebuffer->Data[Index + 2] = ((Color >> 16) & 0xFF);
@@ -1881,11 +1931,11 @@ void glDrawSubTexture(int PosX, int PosY, int ScaleX, int ScaleY, int StartX, in
 	{
 		for (int y = PosY; y < PosY + ScaleY; y++)
 		{
-			int Index = ((int)ImageX + (int)ImageY * Image->Width) * Image->ImageType;
+			int Index = ((int)ImageX + (int)ImageY * Image->Width) * Image->Type;
 
 			ImageY += ImageH;
 
-			if (Image->ImageType == GL_IMAGE_RGB)
+			if (Image->Type == GL_IMAGE_RGB)
 				glDrawPixel(x, y, GL_COLOR_24(Image->Data[Index], Image->Data[Index + 1], Image->Data[Index + 2]), Framebuffer);
 			else
 				glDrawPixel(x, y, GL_COLOR_32(Image->Data[Index], Image->Data[Index + 1], Image->Data[Index + 2], Image->Data[Index + 3]), Framebuffer);
@@ -2001,6 +2051,8 @@ typedef enum
 	GL_TRIANGLE_TEXTURE = 16,
 	GL_TRIANGLE_LIGHTING = 32,
 	GL_TRIANGLE_DEPTHTEST = 64,
+	GL_TRIANGLE_WIREFRAME = 128,
+	GL_TRIANGLE_CLIPPED = 256,
 } glTriangleFlags;
 
 typedef struct
@@ -2015,6 +2067,13 @@ typedef struct
 	glImage* Depthbuffer;
 	glImage* Framebuffer;
 } glTriangle;
+
+void glClearDepthbuffer(glImage* Depthbuffer)
+{
+	const float Max = FLT_MAX;
+	for (int i = 0; i < Depthbuffer->Width * Depthbuffer->Height * Depthbuffer->Type; i += Depthbuffer->Type)
+		memcpy(Depthbuffer->Data + i, &Max, Depthbuffer->Type);
+}
 
 glVertex glLerpVertex(glVertex* a, glVertex* b, float LerpAmt)
 {
@@ -2226,7 +2285,7 @@ void glEdge(glTriangle* Triangle, glGradientsData* Gradients, glVertex* MinVertY
 	}
 }
 
-inline void glStepEdge(glTriangle* Triangle, glEdgeData* d)
+void glStepEdge(glTriangle* Triangle, glEdgeData* d)
 {
 	d->EdgeX += d->EdgeStepX;
 	if (Triangle->Flags & GL_TRIANGLE_DEPTHTEST) d->Depth += d->DepthStep;
@@ -2247,13 +2306,13 @@ inline float glTriangleAreaTimesTwo(glVertex* a, glVertex* b, glVertex* c)
 
 int glIsInDepthRange(float Depth, int x, int y, glImage* Depthbuffer)
 {
-	int DepthIndex = (x + y * Depthbuffer->Width) * Depthbuffer->ImageType;
+	int DepthIndex = (x + y * Depthbuffer->Width) * Depthbuffer->Type;
 	if (DepthIndex >= 0 && DepthIndex < Depthbuffer->Size)
 	{
 		float* Buffer = (float*)(Depthbuffer->Data + DepthIndex);
 		if (Depth < *Buffer)
 		{
-			memcpy((Depthbuffer->Data + DepthIndex), &Depth, Depthbuffer->ImageType);
+			memcpy((Depthbuffer->Data + DepthIndex), &Depth, Depthbuffer->Type);
 			return 1;
 		}			
 	}
@@ -2314,7 +2373,7 @@ void glDrawTextureScanline(glGradientsData* Gradients, glEdgeData* Left, glEdgeD
 			int SrcX = (int)((TexCoord.x * z) * (Texture->Width - 1) + 0.5);
 			int SrcY = (int)((TexCoord.y * z) * (Texture->Height - 1) + 0.5);
 
-			int Index = (SrcX + SrcY * Texture->Width) * Texture->ImageType;
+			int Index = (SrcX + SrcY * Texture->Width) * Texture->Type;
 			if (Index >= 0 && Index < Texture->Size)
 			{
 				glVec3 MixedColor = glMul3(GLVec3f(LightAmt), GLVec3(Texture->Data[Index] * GL_BYTE_FLOAT, Texture->Data[Index + 1] * GL_BYTE_FLOAT, Texture->Data[Index + 2] * GL_BYTE_FLOAT));
@@ -2356,7 +2415,7 @@ void glDrawColorTextureScanline(glGradientsData* Gradients, glEdgeData* Left, gl
 			int SrcX = (int)((TexCoord.x * z) * (Texture->Width - 1) + 0.5);
 			int SrcY = (int)((TexCoord.y * z) * (Texture->Height - 1) + 0.5);
 
-			int Index = (SrcX + SrcY * Texture->Width) * Texture->ImageType;
+			int Index = (SrcX + SrcY * Texture->Width) * Texture->Type;
 
 			if (Index >= 0 && Index < Texture->Size)
 			{
@@ -2385,7 +2444,6 @@ void glDrawScanline(int UseColor, int UseTexture, glGradientsData* Gradients, gl
 }
 */
 
-#define modn(x, N) (((x < 0) ? ((x % N) + N) : x) % N)
 /*
 void glDrawTextureScanline(glTriangle* Triangle, glGradientsData* Gradients, glEdgeData* Left, glEdgeData* Right, int y)
 {
@@ -2410,15 +2468,40 @@ void glDrawTextureScanline(glTriangle* Triangle, glGradientsData* Gradients, glE
 		if (glIsInDepthRange(Depth, x, y, Triangle->Depthbuffer))
 		{
 			float z = 1.0 / OneOverZ;
-			int SrcX = modn((int)((TexCoord.x * z) * (Triangle->Texture->Width - 1) + 0.5), Triangle->Texture->Width);
-			int SrcY = modn((int)((TexCoord.y * z) * (Triangle->Texture->Height - 1) + 0.5), Triangle->Texture->Height);
-			int Index = (SrcX + SrcY * Triangle->Texture->Width) * Triangle->Texture->ImageType;
+			
+			//int TX = (TexCoord.x * z) * (Triangle->Texture->Width - 1) + 0.5;
+			//int TY = (TexCoord.y * z) * (Triangle->Texture->Height - 1) + 0.5;
+			//
+			//int SrcX = modn(TX, Triangle->Texture->Width);
+			//int SrcY = modn(TY, Triangle->Texture->Height);
+			//int Index = (SrcX + SrcY * Triangle->Texture->Width) * Triangle->Texture->Type;
+			//
+			//glVec3 MixedColor = glMul3(GLVec3f(LightAmt), GLVec3(Triangle->Texture->Data[Index] * GL_BYTE_FLOAT, Triangle->Texture->Data[Index + 1] * GL_BYTE_FLOAT, Triangle->Texture->Data[Index + 2] * GL_BYTE_FLOAT));
+			//glDrawPixel(x, y, glGetColor24(&MixedColor), Triangle->Framebuffer);
+			
+			
+			int TX = (TexCoord.x * z) * (Triangle->Texture->Width - 1) + 0.5;
+			int TY = (TexCoord.y * z) * (Triangle->Texture->Height - 1) + 0.5;
+
+			int SrcX = modn0(TX, Triangle->Texture->Width);
+			int SrcY = modn0(TY, Triangle->Texture->Height);
+			int Index = (SrcX + SrcY * Triangle->Texture->Width) * Triangle->Texture->Type;
 
 			if (Index >= 0 && Index < Triangle->Texture->Size)
 			{
 				glVec3 MixedColor = glMul3(GLVec3f(LightAmt), GLVec3(Triangle->Texture->Data[Index] * GL_BYTE_FLOAT, Triangle->Texture->Data[Index + 1] * GL_BYTE_FLOAT, Triangle->Texture->Data[Index + 2] * GL_BYTE_FLOAT));
 				glDrawPixel(x, y, glGetColor24(&MixedColor), Triangle->Framebuffer);
 			}
+			else
+			{
+				SrcX = modn1(TX, Triangle->Texture->Width);
+				SrcY = modn1(TY, Triangle->Texture->Height);
+				Index = (SrcX + SrcY * Triangle->Texture->Width) * Triangle->Texture->Type;
+
+				glVec3 MixedColor = glMul3(GLVec3f(LightAmt), GLVec3(Triangle->Texture->Data[Index] * GL_BYTE_FLOAT, Triangle->Texture->Data[Index + 1] * GL_BYTE_FLOAT, Triangle->Texture->Data[Index + 2] * GL_BYTE_FLOAT));
+				glDrawPixel(x, y, glGetColor24(&MixedColor), Triangle->Framebuffer);
+			}
+			
 		}
 
 		TexCoord.x += Gradients->TexCoordStepXX;
@@ -2429,6 +2512,7 @@ void glDrawTextureScanline(glTriangle* Triangle, glGradientsData* Gradients, glE
 	}
 }
 */
+
 void glDrawScanline(glTriangle* Triangle, glGradientsData* Gradients, glEdgeData* Left, glEdgeData* Right, int y)
 {
 	int MinX = (int)ceilf(Left->EdgeX);
@@ -2460,6 +2544,9 @@ void glDrawScanline(glTriangle* Triangle, glGradientsData* Gradients, glEdgeData
 
 	glVec3 MixedColor;
 
+	int NewTW = Triangle->Texture->Width - 1;
+	int NewTH = Triangle->Texture->Height - 1;
+
 	for (int x = MinX; x < MaxX; x++)
 	{
 		MixedColor = GLVec3f(1.0);
@@ -2471,12 +2558,21 @@ void glDrawScanline(glTriangle* Triangle, glGradientsData* Gradients, glEdgeData
 			if (Triangle->Flags & GL_TRIANGLE_TEXTURE)
 			{
 				float z = 1.0 / OneOverZ;
-				int SrcX = modn((int)((TexCoord.x * z) * (Triangle->Texture->Width - 1) + 0.5), Triangle->Texture->Width);
-				int SrcY = modn((int)((TexCoord.y * z) * (Triangle->Texture->Height - 1) + 0.5), Triangle->Texture->Height);
-				int Index = (SrcX + SrcY * Triangle->Texture->Width) * Triangle->Texture->ImageType;
+				int TX = (TexCoord.x * z) * (NewTW) + 0.5;
+				int TY = (TexCoord.y * z) * (NewTH) + 0.5;
 
-				if (Index >= 0 && Index < Triangle->Texture->Size)
-					MixedColor = glMul3(MixedColor, GLVec3(Triangle->Texture->Data[Index] * GL_BYTE_FLOAT, Triangle->Texture->Data[Index + 1] * GL_BYTE_FLOAT, Triangle->Texture->Data[Index + 2] * GL_BYTE_FLOAT));
+				int SrcX = modn0(TX, Triangle->Texture->Width);
+				int SrcY = modn0(TY, Triangle->Texture->Height);
+				int Index = (SrcX + SrcY * Triangle->Texture->Width) * Triangle->Texture->Type;
+
+				if (Index < 0 || Index >= Triangle->Texture->Size)
+				{
+					SrcX = modn1(TX, Triangle->Texture->Width);
+					SrcY = modn1(TY, Triangle->Texture->Height);
+					Index = (SrcX + SrcY * Triangle->Texture->Width) * Triangle->Texture->Type;
+				}
+				
+				MixedColor = glMul3(MixedColor, GLVec3(Triangle->Texture->Data[Index] * GL_BYTE_FLOAT, Triangle->Texture->Data[Index + 1] * GL_BYTE_FLOAT, Triangle->Texture->Data[Index + 2] * GL_BYTE_FLOAT));
 			}
 			if (Triangle->Flags & GL_TRIANGLE_COLOR)
 				MixedColor = glMul3P(&MixedColor, &Color);
@@ -2517,6 +2613,7 @@ void glScanEdge(glTriangle* Triangle, glGradientsData* Gradients, glEdgeData* a,
 	for (int y = b->EdgeStartY; y < b->EdgeEndY; y++)
 	{
 		glDrawScanline(Triangle, Gradients, Left, Right, y);
+	//	glDrawTextureScanline(Triangle, Gradients, Left, Right, y);
 
 		glStepEdge(Triangle, Left);
 		glStepEdge(Triangle, Right);
@@ -2527,6 +2624,14 @@ void glDrawTriangle2D(glTriangle* Triangle)
 {
 	if (glTriangleAreaTimesTwo(&Triangle->v0, &Triangle->v2, &Triangle->v1) >= 0)
 		return;
+
+	if (Triangle->Flags & GL_TRIANGLE_WIREFRAME)
+	{
+		glDrawLine(Triangle->v0.Pos.x, Triangle->v0.Pos.y, Triangle->v1.Pos.x, Triangle->v1.Pos.y, GL_COLOR_24(255, 0, 0), Triangle->Framebuffer);
+		glDrawLine(Triangle->v1.Pos.x, Triangle->v1.Pos.y, Triangle->v2.Pos.x, Triangle->v2.Pos.y, GL_COLOR_24(0, 255, 0), Triangle->Framebuffer);
+		glDrawLine(Triangle->v2.Pos.x, Triangle->v2.Pos.y, Triangle->v0.Pos.x, Triangle->v0.Pos.y, GL_COLOR_24(0, 0, 255), Triangle->Framebuffer);
+		return;
+	}
 
 	glVertex TmpVert;
 	if (Triangle->v2.Pos.y < Triangle->v1.Pos.y)
@@ -2654,6 +2759,11 @@ int glClipPolygonAxis(int* InVertexSize, glVertex* InVertices, int* AuxillarySiz
 
 void glDrawTriangle3DClipped(glTriangle* Triangle)
 {
+//	if (Triangle->v0.Pos.z >= 10.0 &&
+//		Triangle->v1.Pos.z >= 10.0 &&
+//		Triangle->v2.Pos.z >= 10.0)
+//		return;
+
 	int Inside0 = glInsideViewFrustum4(&Triangle->v0.Pos);
 	int Inside1 = glInsideViewFrustum4(&Triangle->v1.Pos);
 	int Inside2 = glInsideViewFrustum4(&Triangle->v2.Pos);
@@ -2716,23 +2826,29 @@ typedef struct
 
 typedef struct
 {
-	uint8_t Red;
-	uint8_t Green;
-	uint8_t Blue;
-	uint8_t Alpha;
-} BitmapColorHeader;
+	uint8_t Shit[12];
+	int16_t Width;
+	int16_t Height;
+	uint8_t BitCount;
+	uint8_t MoreShit;
+} TargaFile;
 
 #pragma pack(pop)
 
-glImage glLoadImage(const char* Filename, int FlipVertical)
+glImage glLoadBMP(const char* FileName, int FlipVertical)
 {
+	glImage Image;
+	memset(&Image, 0, sizeof(glImage));
 	BitmapFileHeader ImageHeader;
 	BitmapInfoHeader ImageInfo;
 	uint8_t* ImageData;
 
-	FILE* File = fopen(Filename, "rb");
+	FILE* File = fopen(FileName, "rb");
 	if (!File)
-		printf("Not Able to Load: %s\n", Filename);
+	{
+		printf("Not Able to Load: %s\n", FileName);
+		return Image;
+	}
 
 	fread(&ImageHeader, sizeof(BitmapFileHeader), 1, File);
 	fread(&ImageInfo, sizeof(BitmapInfoHeader), 1, File);
@@ -2753,7 +2869,7 @@ glImage glLoadImage(const char* Filename, int FlipVertical)
 	printf("Size: %d\n", ImageInfo.SizeImage);
 	printf("Bits: %d\n", ImageInfo.Bits);
 	*/
-
+	/*
 	for (int32_t i = 0; i < ImageInfo.Width * ImageInfo.Height; i++)
 	{
 		int32_t Index = i * (ImageInfo.Bits == 32 ? 4 : 3);
@@ -2764,29 +2880,171 @@ glImage glLoadImage(const char* Filename, int FlipVertical)
 		ImageData[Index] = R;
 		ImageData[Index + 2] = B;
 	}
+	*/
 
-	if (FlipVertical)
-	{
-		const size_t Stride = ImageInfo.Width * (ImageInfo.Bits == 32 ? 4 : 3);
-		unsigned char* Row = (unsigned char*)malloc(Stride);
-		unsigned char* Low = ImageData;
-		unsigned char* High = &ImageData[(ImageInfo.Height - 1) * Stride];
-
-		for (; Low < High; Low += Stride, High -= Stride)
-		{
-			memcpy(Row, Low, Stride);
-			memcpy(Low, High, Stride);
-			memcpy(High, Row, Stride);
-		}
-		free(Row);
-	}
-
-	glImage Image;
 	Image.Width = ImageInfo.Width;
 	Image.Height = ImageInfo.Height;
-	Image.ImageType = (ImageInfo.Bits == 32 ? 4 : 3);
+	Image.Type = (ImageInfo.Bits == 32 ? 4 : 3);
 	Image.Size = ImageSize;
 	Image.Data = ImageData;
 
+	glBGRImageToRGB(&Image);
+
+	if (FlipVertical)
+		glFlipImageVertical(&Image);
+
 	return Image;
+}
+
+glImage glLoadTGA(const char* FileName, int FlipVertical)
+{
+//	int16_t Width;
+//	int16_t Height;
+//	uint8_t BitCount;
+	TargaFile TgaFile;
+	glImage Image;
+	memset(&Image, 0, sizeof(glImage));
+
+	FILE* File = fopen(FileName, "rb");
+	if (!File)
+	{
+		printf("Not Able to Load: %s\n", FileName);
+		return Image;
+	}		
+	
+	fread(&TgaFile, sizeof(TargaFile), 1, File);
+
+	Image.Width = TgaFile.Width;
+	Image.Height = TgaFile.Height;
+	Image.Type = TgaFile.BitCount / 8;
+	Image.Size = Image.Width * Image.Height * Image.Type;
+	Image.Data = (uint8_t*)malloc(Image.Size);
+	fread(Image.Data, 1, Image.Size, File);
+	/*
+	for (int32_t i = 0; i < Image.Width * Image.Height; i++)
+	{
+		int32_t Index = i * Image.Type;
+
+		uint8_t B = Image.Data[Index];
+		uint8_t R = Image.Data[Index + 2];
+
+		Image.Data[Index] = R;
+		Image.Data[Index + 2] = B;
+	}
+	*/
+	glBGRImageToRGB(&Image);
+
+	if (FlipVertical)
+		glFlipImageVertical(&Image);
+
+	fclose(File);
+
+	return Image;
+}
+
+glImage glLoadImage(const char* FileName, int FlipVertical)
+{
+	const char* Extension = strchr(FileName, '.');
+
+	if (strcmp(Extension + 1, "tga") == 0)
+		return glLoadTGA(FileName, FlipVertical);
+	else
+		return glLoadBMP(FileName, FlipVertical);
+}
+
+void glSaveBMP(const char* FileName, int FlipVertical, glImage* Image)
+{
+	BitmapInfoHeader ImageInfo;
+	ImageInfo.Size = Image->Type == GL_IMAGE_RGB ? 40 : 108;
+	ImageInfo.Width = Image->Width;
+	ImageInfo.Height = Image->Height;
+	ImageInfo.Planes = 1;
+	ImageInfo.Compression = 0;
+	ImageInfo.SizeImage = Image->Width * Image->Height * Image->Type;
+	ImageInfo.XPelsPerMeter = 3780;
+	ImageInfo.YPelsPerMeter = 3780;
+	ImageInfo.ClrUsed = 0;
+	ImageInfo.ClrImportant = 0;
+	ImageInfo.Bits = Image->Type == GL_IMAGE_RGB ? 24 : 32;
+
+	BitmapFileHeader ImageHeader;
+	ImageHeader.OffBits = Image->Type == GL_IMAGE_RGB ? 54 : 122;
+	ImageHeader.Resv1 = 0;
+	ImageHeader.Resv1 = 0;
+	ImageHeader.Size = ImageHeader.OffBits + ImageInfo.SizeImage;
+	ImageHeader.Type = 19778;
+
+	FILE* File = fopen(FileName, "wb");
+
+	fwrite(&ImageHeader, sizeof(BitmapFileHeader), 1, File);
+	fwrite(&ImageInfo, sizeof(BitmapInfoHeader), 1, File);
+
+	fseek(File, ImageHeader.OffBits, SEEK_SET);
+
+	//	uint32_t ImageSize = ImageInfo.Width * ImageInfo.Height * (ImageInfo.Bits == 32 ? 4 : 3);
+	//	ImageInfo.SizeImage = ImageSize;
+
+	uint8_t* ImageData = (uint8_t*)malloc(ImageInfo.SizeImage);
+	memcpy(ImageData, Image->Data, ImageInfo.SizeImage);
+	/*
+	for (int32_t i = 0; i < ImageInfo.Width * ImageInfo.Height; i++)
+	{
+		int32_t Index = i * (ImageInfo.Bits == 32 ? 4 : 3);
+
+		uint8_t B = ImageData[Index];
+		uint8_t R = ImageData[Index + 2];
+
+		ImageData[Index] = R;
+		ImageData[Index + 2] = B;
+	}
+	*/
+	glImage Temp = *Image;
+	Temp.Data = ImageData;
+
+	glBGRImageToRGB(&Temp);
+	if (FlipVertical)
+		glFlipImageVertical(&Temp);
+
+	fwrite(ImageData, ImageInfo.SizeImage, 1, File);
+	free(ImageData);
+
+	fclose(File);
+}
+
+void glSaveTGA(const char* FileName, int FlipVertical, glImage* Image)
+{
+	TargaFile TgaFile;
+	memset(&TgaFile, 0, sizeof(TargaFile));
+	FILE* File = fopen(FileName, "wb");
+
+	TgaFile.BitCount = Image->Type * 8;
+	TgaFile.Width = Image->Width;
+	TgaFile.Height = Image->Height;
+	TgaFile.Shit[2] = 2;
+	fwrite(&TgaFile, sizeof(TargaFile), 1, File);
+
+	uint8_t* ImageData = (uint8_t*)malloc(Image->Size);
+	memcpy(ImageData, Image->Data, Image->Size);
+
+	glImage Temp = *Image;
+	Temp.Data = ImageData;
+
+	glBGRImageToRGB(&Temp);
+	if (FlipVertical)
+		glFlipImageVertical(&Temp);
+
+	fwrite(ImageData, Image->Size, 1, File);
+	free(ImageData);
+
+	fclose(File);
+}
+
+void glSaveImage(const char* FileName, int FlipVertical, glImage* Image)
+{
+	const char* Extension = strchr(FileName, '.');
+
+	if (strcmp(Extension + 1, "tga") == 0)
+		return glSaveTGA(FileName, FlipVertical, Image);
+	else
+		return glSaveBMP(FileName, FlipVertical, Image);
 }
